@@ -1,0 +1,11 @@
+.venv/
+.models/
+.tools/
+__pycache__/
+data/
+validation/evidence/
+validation/offline-test-tmp/
+*cookies*.txt
+*.cookie
+.playwright-cli/
+output/playwright/
