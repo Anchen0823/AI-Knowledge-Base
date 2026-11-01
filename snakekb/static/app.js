@@ -729,6 +729,20 @@ function createGraph() {
     if(state.canUndo) taxonomyBody.append(button('撤销最近一次分类调整',()=>change({action:'undo'}),'secondary'));
   }
 
+  const displayControls = el('div', undefined, 'graph-display-controls');
+  const display = {sources:false, semantic:false, local:false, labels:false};
+  for (const [key,label] of [['sources','显示来源连线'],['semantic','显示语义相近'],['local','只看选中节点的一跳邻居'],['labels','显示全部标签']]) {
+    const wrap=el('label');const input=el('input');input.type='checkbox';
+    input.onchange=()=>{display[key]=input.checked;draw();};
+    wrap.append(input,document.createTextNode(label));displayControls.append(wrap);
+  }
+  displayControls.append(el('span','点击空白取消选择 · 滚轮缩放 · 拖动节点整理布局','meta'));
+  filter.append(displayControls);
+  function edgeEnabled(edge, active) {
+    if(edge.kind==='语义相近') return display.semantic;
+    if(edge.kind==='来源') return display.sources || edge.source===active || edge.target===active;
+    return true;
+  }
   const stage = el('div', undefined, 'graph-stage');
   const ns = 'http://www.w3.org/2000/svg';
   const svg = (tag, attrs = {}) => {
@@ -883,8 +897,10 @@ function createGraph() {
   function layout() {
     const sourceNodes = nodes.filter((node) => node.kind === 'source');
     sourceNodes.forEach((node, index) => {
-      node.x = 250 + index * 500 / Math.max(1, sourceNodes.length - 1);
-      node.y = 320;
+      const angle = index * Math.PI * 2 / Math.max(1,sourceNodes.length) - Math.PI / 2;
+      node.x = 500 + 310 * Math.cos(angle);
+      node.y = 325 + 230 * Math.sin(angle);
+      node.anchor = {x:node.x,y:node.y};
     });
     nodes.filter((node) => node.kind !== 'source').forEach((node, index) => {
       if (node.x !== undefined) return;
@@ -916,7 +932,8 @@ function createGraph() {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const distance = Math.max(1, Math.hypot(dx, dy));
-        const pull = (distance - (edge.kind === '来源' ? 160 : 210)) * .008;
+        if(edge.kind==='语义相近') continue;
+        const pull = (distance - (edge.kind === '来源' ? 115 : 160)) * (edge.kind==='来源' ? .004 : .008);
         const ai = nodes.indexOf(a);
         const bi = nodes.indexOf(b);
         force[ai].x += dx / distance * pull;
@@ -925,9 +942,11 @@ function createGraph() {
         force[bi].y -= dy / distance * pull;
       }
       nodes.forEach((node, index) => {
-        if (node.kind === 'source') return;
-        node.x += force[index].x * 3;
-        node.y += force[index].y * 3;
+        const anchor = node.anchor || sourceNodes.find(s=>s.id===node.sourceId)?.anchor || {x:500,y:325};
+        force[index].x += (anchor.x-node.x)*.006;
+        force[index].y += (anchor.y-node.y)*.006;
+        node.x += Math.max(-12,Math.min(12,force[index].x * 2));
+        node.y += Math.max(-12,Math.min(12,force[index].y * 2));
       });
     }
   }
@@ -984,6 +1003,10 @@ function createGraph() {
     world.setAttribute('transform', `translate(${tx} ${ty}) scale(${zoom})`);
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const active = hover || selected;
+    const neighbours = new Set(active ? [active] : []);
+    for(const edge of edges) if(edgeEnabled(edge,active) && (edge.source===active || edge.target===active)) {
+      neighbours.add(edge.source);neighbours.add(edge.target);
+    }
     for (const edge of edges) {
       const a = byId.get(edge.source);
       const b = byId.get(edge.target);
@@ -992,13 +1015,32 @@ function createGraph() {
       edge.line.setAttribute('y1', a.y);
       edge.line.setAttribute('x2', b.x);
       edge.line.setAttribute('y2', b.y);
-      edge.line.classList.toggle('highlight', edge.source === active || edge.target === active);
+      const connected=edge.source===active || edge.target===active;
+      edge.line.style.display = edgeEnabled(edge,active) && (!display.local || !active || connected) ? '' : 'none';
+      edge.line.classList.toggle('highlight', connected);
+      edge.line.classList.toggle('muted', Boolean(active && !connected));
     }
     for (const node of nodes) {
       if (!node.group) continue;
       node.group.setAttribute('transform', `translate(${node.x} ${node.y})`);
       node.group.classList.toggle('selected', node.id === selected);
       node.group.classList.toggle('source', node.kind === 'source');
+      node.group.style.display=display.local && active && !neighbours.has(node.id) ? 'none' : '';
+      node.group.classList.toggle('muted', Boolean(active && !neighbours.has(node.id)));
+      node.group.classList.toggle('neighbour', neighbours.has(node.id));
+    }
+    // Resolve label overlap in viewport coordinates; selected nodes get priority.
+    const boxes=[];
+    const ordered=[...nodes].sort((a,b)=>(b.id===active?100:neighbours.has(b.id)?50:b.kind==='source'?10:0)-(a.id===active?100:neighbours.has(a.id)?50:a.kind==='source'?10:0));
+    for(const node of ordered) {
+      const label=node.group.querySelector('text');
+      if(node.group.style.display==='none') continue;
+      const width=Math.min(260,label.textContent.length*12)*zoom;
+      const box={x:node.x*zoom+tx-width/2,y:(node.y+12)*zoom+ty,w:width,h:22*zoom};
+      const collides=boxes.some(b=>box.x<b.x+b.w && box.x+box.w>b.x && box.y<b.y+b.h && box.y+box.h>b.y);
+      const visible=display.labels || node.id===active || (!collides && (!active || neighbours.has(node.id)));
+      label.style.display=visible?'':'none';
+      if(visible) boxes.push(box);
     }
   }
 
@@ -1033,7 +1075,7 @@ function createGraph() {
       status.textContent = result.total ? `${concepts} / ${result.total} 个知识点 · ${nodes.filter((node) => node.kind === 'source').length} 份资料` : '这份资料还没有知识点';
       layout();
       rebuild();
-      if (!selected && nodes.length) select(nodes.find((node) => node.kind === 'concept') || nodes[0]);
+      if (!append) { fitGraph(); panel.append(el('p','选择一个节点，查看它的定义、来源和相邻关系。','meta')); }
     } catch (error) {
       if (ticket !== serial) return;
       status.textContent = '没加载出来：' + error.message;
@@ -1055,6 +1097,13 @@ function createGraph() {
   };
   threshold.onchange = () => load(false);
 
+  function fitGraph() {
+    if(!nodes.length) return;
+    const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y);
+    const left=Math.min(...xs)-65,right=Math.max(...xs)+65,top=Math.min(...ys)-45,bottom=Math.max(...ys)+55;
+    zoom=Math.min(1.5,900/(right-left),570/(bottom-top));
+    tx=500-(left+right)/2*zoom;ty=325-(top+bottom)/2*zoom;draw();
+  }
   function point(event) {
     const p = canvas.createSVGPoint();
     p.x = event.clientX;
@@ -1074,7 +1123,7 @@ function createGraph() {
     button('−', () => scale(.8), 'secondary'),
     button('＋', () => scale(1.25), 'secondary'),
     button('全部知识点', () => { query = focus = ''; search.value = ''; load(false); }, 'secondary'),
-    button('居中', () => { zoom = 1; tx = ty = 0; draw(); }, 'secondary'),
+    button('适应画布', fitGraph, 'secondary'),
   );
   controls.children[0].setAttribute('aria-label', '缩小图谱');
   controls.children[0].title = '缩小';
@@ -1110,6 +1159,7 @@ function createGraph() {
   canvas.addEventListener('pointerup', (event) => {
     if (!drag || drag.id !== event.pointerId) return;
     if (!drag.moved && drag.node) select(drag.node);
+    else if (!drag.moved) { selected=null;hover=null;panel.replaceChildren(el('p','选择节点查看相邻关系。','meta'));draw(); }
     drag = null;
     canvas.releasePointerCapture(event.pointerId);
   });
