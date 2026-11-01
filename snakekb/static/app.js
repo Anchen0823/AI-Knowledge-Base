@@ -676,13 +676,58 @@ function createGraph() {
   filter.append(status, density, legend);
   const domains = {algorithms:['算法与编程','#268078'], ai:['AI 模型与工具','#4778c5'], agents:['Agent 系统','#8959b5'], society:['社会与公共议题','#c28132'], other:['未分类','#77838d']};
   const domainLegend = el('div', undefined, 'domain-legend');
-  for (const [key, [label, color]] of Object.entries(domains)) {
-    const item = el('span', '● ' + label);
-    item.style.color = color;
-    domainLegend.append(item);
+  function updateDomainLegend() {
+    domainLegend.replaceChildren();
+    for (const [label, color] of Object.values(domains)) {
+      const item = el('span', '● ' + label); item.style.color = color; domainLegend.append(item);
+    }
+    domainLegend.append(el('span', '◆ 资料　● 概念　■ 工具/产品　⬡ 算法/方法　◎ 多领域'));
   }
-  domainLegend.append(el('span', '◆ 资料　● 概念　■ 工具/产品　⬡ 算法/方法　◎ 跨领域'));
+  updateDomainLegend();
   filter.append(domainLegend);
+
+  const taxonomyPanel = el('details', undefined, 'taxonomy-panel');
+  taxonomyPanel.append(el('summary', '管理领域 · 新增、拆分、合并'));
+  const taxonomyBody = el('div'); taxonomyPanel.append(taxonomyBody); filter.append(taxonomyPanel);
+  async function refreshTaxonomy() {
+    const state = await api('/api/taxonomy');
+    for (const key of Object.keys(domains)) delete domains[key];
+    for (const [key,d] of Object.entries(state.domains)) domains[key]=[d.label,d.color];
+    updateDomainLegend(); taxonomyBody.replaceChildren();
+    taxonomyBody.append(el('p', '自动分类依据标题、概念和定义中的关键词，可多选领域。以下建议只提供线索，不会自动改动分类；应用前请核对预览。'));
+    async function change(operation) {
+      try { await api('/api/taxonomy', { ...operation, revision:state.revision }); await load(false); }
+      catch (error) { taxonomyBody.append(el('p', error.message)); }
+    }
+    async function preview(operation) {
+      try {
+        const next=await api('/api/taxonomy',{...operation,revision:state.revision,preview:true});
+        const affected=next.sources.filter(source=>JSON.stringify(source.categories)!==JSON.stringify(state.sources.find(s=>s.id===source.id)?.categories));
+        const box=el('div',undefined,'concept');box.append(el('h3','预览：'+operation.label));
+        box.append(el('p',operation.action==='merge'?'合并领域，保留首个领域的 ID 与颜色。':'新增关键词归类；拆分创建子领域并保留父领域。'));
+        for(const source of affected) box.append(el('p',source.title+' → '+source.categories.map(k=>next.domains[k].label).join('、')));
+        if(!affected.length) box.append(el('p','现有资料归属不变；新领域可用于后续资料。'));
+        box.append(button('确认应用',()=>change(operation)),button('取消',()=>box.remove(),'secondary'));taxonomyBody.append(box);
+      } catch(error) { taxonomyBody.append(el('p',error.message)); }
+    }
+    for (const proposal of state.suggestions) {
+      const row=el('div',undefined,'concept'); row.append(el('strong',proposal.label),el('p',proposal.reason));
+      row.append(button('预览建议',()=>preview({...proposal,action:proposal.kind}),'secondary')); taxonomyBody.append(row);
+    }
+    if (!state.suggestions.length) taxonomyBody.append(el('p','当前暂无自动建议。可在下面手动调整领域。'));
+    const action=el('select');
+    for (const [value,label] of [['create','新增领域'],['split','拆分为子领域'],['merge','合并领域']]) { const o=el('option',label);o.value=value;action.append(o); }
+    const name=el('input');name.placeholder='领域名称'; name.setAttribute('aria-label','领域名称');
+    const keywords=el('input');keywords.placeholder='关键词，用逗号分隔';keywords.setAttribute('aria-label','分类关键词');
+    const choices=el('div');
+    for (const [id,d] of Object.entries(state.domains)) {
+      if(id==='other') continue;
+      const label=el('label');const check=el('input');check.type='checkbox';check.value=id;label.append(check,document.createTextNode(d.label));choices.append(label);
+    }
+    taxonomyBody.append(action,name,keywords,el('p','拆分选择一个父领域；合并选择至少两个领域。'),choices,
+      button('预览调整',()=>{const ids=Array.from(choices.querySelectorAll('input:checked')).map(c=>c.value);preview({action:action.value,label:name.value,keywords:keywords.value.split(/[,，]/).map(w=>w.trim()).filter(Boolean),ids,parent:ids[0]});},'secondary'));
+    if(state.canUndo) taxonomyBody.append(button('撤销最近一次分类调整',()=>change({action:'undo'}),'secondary'));
+  }
 
   const stage = el('div', undefined, 'graph-stage');
   const ns = 'http://www.w3.org/2000/svg';
@@ -967,6 +1012,7 @@ function createGraph() {
       const nextOffset = append ? offset : 0;
       const params = new URLSearchParams({ q: query, focus, offset: nextOffset, limit: 24, threshold: threshold.value,
         include: append ? nodes.filter((node) => node.kind === 'concept').map((node) => node.id).join(',') : '' });
+      await refreshTaxonomy();
       const result = await api('/api/graph?' + params);
       if (ticket !== serial || !root.isConnected) return;
       if (!append) {

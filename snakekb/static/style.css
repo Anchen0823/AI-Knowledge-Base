@@ -258,3 +258,8 @@ details.help p { font-size: 13px; color: #6b7b6d; }
 .graph-node .domain-ring { fill:none; stroke:var(--node-color, #77838d); stroke-width:1.5; stroke-dasharray:3 2; }
 .graph-node:hover .node-shape, .graph-node:focus .node-shape, .graph-node.selected .node-shape { fill:var(--node-color, #77838d); stroke:#253d50; stroke-width:3.5; }
 .graph-node:hover .domain-ring, .graph-node:focus .domain-ring, .graph-node.selected .domain-ring { fill:none; stroke:var(--node-color, #77838d); stroke-width:2; }
+.taxonomy-panel { width:100%; padding:10px 0; }
+.taxonomy-panel summary { cursor:pointer; font-weight:600; }
+.taxonomy-panel input:not([type=checkbox]), .taxonomy-panel select { margin:6px; max-width:260px; }
+.taxonomy-panel label { display:inline-flex; gap:6px; margin:8px; }
+.taxonomy-panel button { margin:6px; }

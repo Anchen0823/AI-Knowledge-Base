@@ -62,6 +62,9 @@ class LocalGraph:
 
     def documents(self):
         from .concepts import read_artifact
+        from .taxonomy import view
+        taxonomy = view(self.data)
+        assignments = {s['id']:s['categories'] for s in taxonomy['sources']}
         index_file = self.data / 'formal/index.json'
         if not index_file.exists():
             self.relations = []
@@ -74,9 +77,10 @@ class LocalGraph:
             if not p.load(entry / 'gate.json').get('passed'):
                 continue
             source = p.load(entry / 'source.json')
-            domain = category(source)
+            domains = assignments.get(name, ['other'])
+            labels = [taxonomy['domains'][k]['label'] for k in domains]
             sources.append({'id': 'source:' + name, 'entryId': name, 'label': source['title'],
-                            'kind': 'source', 'excerpt': source['title'], 'categories':[domain], 'categoryLabels':[DOMAINS[domain]]})
+                            'kind': 'source', 'excerpt': source['title'], 'categories':domains, 'categoryLabels':labels})
             artifact = read_artifact(entry)
             if not artifact:
                 continue
@@ -92,8 +96,8 @@ class LocalGraph:
                         'evidence': [], 'mergeReasons': [], 'limitations': [],
                         'contributions': [], 'syntheses': [], 'categories': []}
                 node = merged[identity]
-                node['categories'] = sorted(set(node['categories'] + [domain]))
-                node['categoryLabels'] = [DOMAINS[c] for c in node['categories']]
+                node['categories'] = sorted(set(node['categories'] + domains))
+                node['categoryLabels'] = [taxonomy['domains'][c]['label'] for c in node['categories']]
                 node['sourceIds'].append('source:' + name)
                 node['contributions'].append({'entryId':name,'sourceTitle':source['title'],
                     'definition':concept['definition'],'notes_sha256':artifact['notes_sha256'],

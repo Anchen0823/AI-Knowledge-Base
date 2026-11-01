@@ -135,6 +135,9 @@ def make_server(data, host='127.0.0.1', port=8765, token=None, proxy=None):
             if not self.authorized():
                 return self.respond(401, {'error': NO_TOKEN})
             try:
+                if path == '/api/taxonomy':
+                    from .taxonomy import view
+                    return self.respond(200, view(data))
                 if path == '/api/graph':
                     return self.respond(200, graph.graph(**self.graph_params()))
                 if path == '/api/state':
@@ -188,6 +191,9 @@ def make_server(data, host='127.0.0.1', port=8765, token=None, proxy=None):
                     return self.respond(413, {'error': '这次请求是空的或太大了。刷新页面后重新提交。'})
                 obj = json.loads(self.rfile.read(size))
                 path = urlsplit(self.path).path
+                if path == '/api/taxonomy':
+                    from .taxonomy import apply
+                    return self.respond(200, apply(data, obj))
                 if path == '/api/submit':
                     return self.submit(obj)
                 if path == '/api/analyze':

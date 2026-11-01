@@ -7,4 +7,4 @@
 - 不使用 force push，不擅自修改远程地址或发布到新的公共仓库。
 - 若仓库尚未初始化、未配置远程或推送失败，完成可进行的本地工作，如实说明阻塞原因；缺少远程地址时向用户询问，不声称已推送。
 
-- 远程托管使用 GitHub；本项目使用私有仓库 Anchen0823/AI-Knowledge-Base，推送到 origin 的当前跟踪分支。
+- 远程托管使用 GitHub；本项目使用公开仓库 Anchen0823/AI-Knowledge-Base，推送到 origin 的当前跟踪分支。

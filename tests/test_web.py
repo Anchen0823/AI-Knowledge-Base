@@ -169,6 +169,17 @@ class ErrorResponseTests(unittest.TestCase):
         conn.close()
         return result
 
+    def test_taxonomy_auth_preview_and_revision(self):
+        self.assertEqual(self.request('/api/taxonomy',auth=False)[0],401)
+        self.assertEqual(self.request('/api/taxonomy')[0],200)
+        payload={'action':'create','label':'天文','keywords':['天文'],'revision':0,'preview':True}
+        self.assertEqual(self.request('/api/taxonomy',payload)[0],200)
+        self.assertFalse((self.data/'taxonomy.json').exists())
+        payload.pop('preview')
+        self.assertEqual(self.request('/api/taxonomy',payload)[0],200)
+        self.assertEqual(self.request('/api/taxonomy',payload)[0],400)
+        self.assertEqual(self.request('/api/taxonomy',{'action':'undo','revision':1})[0],200)
+
     def test_missing_token_error_says_how_to_get_one(self):
         status, error = self.request('/api/state', auth=False)
         self.assertEqual(status, 401)
